@@ -1,51 +1,31 @@
 import pandas as pd
 import plotly.express as px
+import numpy as np
 
-# Exercise 1 Functions
 def survival_demographics():
-    """Analyze survival by class, sex, and age group."""
     df = pd.read_csv('https://raw.githubusercontent.com/leontoddjohnson/datasets/main/data/titanic.csv')
     
-    # Create age categories as Categorical
     bins = [0, 12, 19, 59, 100]
     labels = ['Child', 'Teen', 'Adult', 'Senior']
     df['age_group'] = pd.cut(df['Age'], bins=bins, labels=labels, right=True)
     
-    # Ensure age_group is categorical
-    df['age_group'] = df['age_group'].astype('category')
-    
-    # Group and calculate (observed=False to include empty categories)
-    grouped = df.groupby(['Pclass', 'Sex', 'age_group'], observed=False).agg(
-        n_passengers=('Survived', 'count'),
+    result = df.groupby(['Pclass', 'Sex', 'age_group'], observed=False, dropna=True).agg(
+        n_passengers=('Survived', 'size'),
         n_survivors=('Survived', 'sum')
     ).reset_index()
     
-    # Calculate survival rate
-    grouped['survival_rate'] = grouped.apply(
-        lambda row: row['n_survivors'] / row['n_passengers'] if row['n_passengers'] > 0 else 0.0,
-        axis=1
-    )
+    result['n_passengers'] = result['n_passengers'].astype(int)
+    result['n_survivors'] = result['n_survivors'].fillna(0).astype(int)
+    result['survival_rate'] = (result['n_survivors'] / result['n_passengers']).fillna(0.0)
     
-    # Ensure age_group remains categorical in result
-    grouped['age_group'] = pd.Categorical(
-        grouped['age_group'], 
-        categories=labels, 
-        ordered=True
-    )
+    result = result.sort_values(['Pclass', 'Sex', 'age_group']).reset_index(drop=True)
     
-    # Sort for clarity
-    grouped = grouped.sort_values(['Pclass', 'Sex', 'age_group']).reset_index(drop=True)
-    
-    return grouped
+    return result
 
 def visualize_demographic():
-    """Visualize survival patterns by class, sex, and age group."""
     df = survival_demographics()
-    
-    # Filter out rows with 0 passengers for cleaner visualization
     df_clean = df[df['n_passengers'] > 0].copy()
     
-    # Create grouped bar chart
     fig = px.bar(
         df_clean,
         x='age_group',
@@ -63,19 +43,13 @@ def visualize_demographic():
     )
     
     fig.update_yaxes(range=[0, 1])
-    fig.update_layout(showlegend=True)
-    
     return fig
 
-# Exercise 2 Functions
 def family_groups():
-    """Analyze family size, class, and fare."""
     df = pd.read_csv('https://raw.githubusercontent.com/leontoddjohnson/datasets/main/data/titanic.csv')
     
-    # Create family_size column
     df['family_size'] = df['SibSp'] + df['Parch'] + 1
     
-    # Group by family_size and Pclass
     result = df.groupby(['family_size', 'Pclass']).agg(
         n_passengers=('Fare', 'count'),
         avg_fare=('Fare', 'mean'),
@@ -83,26 +57,20 @@ def family_groups():
         max_fare=('Fare', 'max')
     ).reset_index()
     
-    # Sort for clarity
     result = result.sort_values(['Pclass', 'family_size']).reset_index(drop=True)
     
     return result
 
 def last_names():
-    """Extract and count last names."""
     df = pd.read_csv('https://raw.githubusercontent.com/leontoddjohnson/datasets/main/data/titanic.csv')
     
-    # Extract last name (before the comma)
     df['LastName'] = df['Name'].str.split(',').str[0]
     
-    # Count occurrences
     return df['LastName'].value_counts()
 
 def visualize_families():
-    """Visualize relationship between family size and fare by class."""
     df = family_groups()
     
-    # Create scatter plot with size representing passenger count
     fig = px.scatter(
         df,
         x='family_size',
@@ -119,37 +87,25 @@ def visualize_families():
         color_continuous_scale='Viridis'
     )
     
-    fig.update_traces(marker=dict(line=dict(width=1, color='DarkSlateGrey')))
-    
     return fig
 
-# Bonus Functions
 def determine_age_division():
-    """Add older_passenger column based on class median age."""
     df = pd.read_csv('https://raw.githubusercontent.com/leontoddjohnson/datasets/main/data/titanic.csv')
     
-    # For each row, compare age to the median of their class
-    def is_older_than_class_median(row):
-        if pd.isna(row['Age']):
-            return pd.NA
-        class_median = df[df['Pclass'] == row['Pclass']]['Age'].median()
-        return row['Age'] > class_median
+    class_medians = df.groupby('Pclass')['Age'].transform('median')
     
-    df['older_passenger'] = df.apply(is_older_than_class_median, axis=1)
+    df['older_passenger'] = None
+    mask = df['Age'].notna()
+    df.loc[mask, 'older_passenger'] = df.loc[mask, 'Age'] > class_medians[mask]
     
     return df
 
 def visualize_age_division():
-    """Visualize age division and survival patterns."""
     df = determine_age_division()
-    
-    # Remove rows with missing age data
     df_clean = df.dropna(subset=['Age', 'older_passenger']).copy()
     
-    # Group by class, age division, and survival
     summary = df_clean.groupby(['Pclass', 'older_passenger', 'Survived']).size().reset_index(name='count')
     
-    # Create grouped bar chart
     fig = px.bar(
         summary,
         x='Pclass',
